@@ -4,7 +4,7 @@ from typing import Optional
 from app.services.party import create_party, join_party, leave_party, get_party_by_id, get_party_by_player
 from app.models.party import Party
 
-router = APIRouter()
+router = APIRouter(prefix="/parties", tags=["parties"])
 
 def as_dict(obj):
     """Safely convert Party objects to dict."""

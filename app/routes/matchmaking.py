@@ -5,7 +5,7 @@ from app.services.matchmaking import join_queue, get_queue, get_active_matches
 from app.services.session.session_manager import start_session
 from app.services.session.port_manager import get_free_port
 
-router = APIRouter()
+router = APIRouter(prefix="/matchmaking", tags=["matchmaking"])
 
 # ------------------------------
 # Allowed competitive maps
