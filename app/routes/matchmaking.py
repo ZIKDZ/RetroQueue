@@ -2,6 +2,8 @@
 from fastapi import APIRouter
 from typing import List
 from app.services.matchmaking import join_queue, get_queue, get_active_matches
+from app.services.session.session_manager import start_session
+from app.services.session.port_manager import get_free_port
 
 router = APIRouter()
 
@@ -25,7 +27,24 @@ def join_matchmaking(party_id: str, maps: List[str]):
     if not valid_maps:
         return {"error": "No valid maps provided. Allowed maps: " + ", ".join(ALLOWED_MAPS)}
 
+    # Join the queue (returns created matches if any)
     result = join_queue(party_id, valid_maps)
+
+    # Start sessions for any new matches
+    for match in result.get("created_matches", []):
+        try:
+            port = get_free_port()
+            session = start_session(match["map_name"], max_players=match["max_players"])
+            if session:
+                match["container_id"] = session["container_id"]
+                match["port"] = session["port"]
+                match["status"] = "in_game"
+            else:
+                match["status"] = "failed"
+        except Exception as e:
+            match["status"] = "failed"
+            match["error"] = str(e)
+
     return result
 
 # ------------------------------
