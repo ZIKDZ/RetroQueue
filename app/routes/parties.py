@@ -6,13 +6,19 @@ from app.models.party import Party
 
 router = APIRouter()
 
+def as_dict(obj):
+    """Safely convert Party objects to dict."""
+    if obj is None:
+        return None
+    return obj.dict() if hasattr(obj, "dict") else obj
+
 # ------------------------------
 # Create a new party (solo or group leader)
 # ------------------------------
 @router.post("/create")
 def api_create_party(leader_steamid: str, max_players: Optional[int] = 5):
     party = create_party(leader_steamid, max_players)
-    return {"message": "Party created", "party": party.dict()}
+    return {"message": "Party created", "party": as_dict(party)}
 
 # ------------------------------
 # Join an existing party by code
@@ -22,7 +28,7 @@ def api_join_party(player_steamid: str, party_code: str):
     party = join_party(player_steamid, party_code)
     if not party:
         return {"error": "Unable to join party (invalid code, party full, or already in a party)"}
-    return {"message": "Joined party", "party": party.dict()}
+    return {"message": "Joined party", "party": as_dict(party)}
 
 # ------------------------------
 # Leave current party
@@ -32,7 +38,7 @@ def api_leave_party(player_steamid: str):
     party = leave_party(player_steamid)
     if not party:
         return {"message": "Party disbanded or player was not in a party"}
-    return {"message": "Left party", "party": party.dict()}
+    return {"message": "Left party", "party": as_dict(party)}
 
 # ------------------------------
 # Get party by ID
@@ -42,7 +48,7 @@ def api_get_party(party_id: str):
     party = get_party_by_id(party_id)
     if not party:
         return {"error": "Party not found"}
-    return {"party": party.dict()}
+    return {"party": as_dict(party)}
 
 # ------------------------------
 # Get the party the player belongs to
@@ -52,4 +58,4 @@ def api_get_party_by_player(steam_id: str):
     party = get_party_by_player(steam_id)
     if not party:
         return {"error": "Player is not in a party"}
-    return {"party": party.dict()}
+    return {"party": as_dict(party)}

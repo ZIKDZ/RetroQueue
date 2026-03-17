@@ -6,6 +6,9 @@ from app.models.party import Party
 parties: Dict[str, Party] = {}            # party_id -> Party
 player_to_party: Dict[str, str] = {}      # steam_id -> party_id
 
+# ------------------------------
+# Create a new party
+# ------------------------------
 def create_party(leader_steamid: str, max_players: int = 10) -> Party:
     """
     Create a new party with the leader as the first member.
@@ -15,38 +18,50 @@ def create_party(leader_steamid: str, max_players: int = 10) -> Party:
         party_id = player_to_party[leader_steamid]
         return parties[party_id]
 
-    party = Party(leader=leader_steamid, players=[leader_steamid], max_players=max_players)
+    party = Party(
+        leader=leader_steamid,
+        players=[leader_steamid],
+        max_players=max_players,
+        state="lobby"
+    )
     parties[party.party_id] = party
     player_to_party[leader_steamid] = party.party_id
     return party
 
-def join_party(player_steamid: str, party_code: str) -> Optional[Party]:
+# ------------------------------
+# Join a party using its code
+# ------------------------------
+def join_party(player_steamid: str, party_code: str) -> dict:
     """
-    Join a party using its code.
-    Returns the updated Party or None if join failed.
+    Join a party by code. Returns a dict with status or error.
     """
     # Check if player is already in a party
     if player_steamid in player_to_party:
-        return None
+        return {"error": "Player is already in a party"}
 
-    # Find party by code
+    # Find target party by code
     target_party = next((p for p in parties.values() if p.party_code == party_code), None)
     if not target_party:
-        return None
+        return {"error": "Invalid party code"}
 
-    # Check max players
+    # Check if party is full
     if len(target_party.players) >= target_party.max_players:
-        return None
+        return {"error": "Party is full"}
 
-    # Add player
+    # Add player to party
     target_party.players.append(player_steamid)
     player_to_party[player_steamid] = target_party.party_id
-    return target_party
 
+    # Party state remains lobby if not queued
+    return {"message": "Player joined party", "party": target_party}
+
+# ------------------------------
+# Leave a party
+# ------------------------------
 def leave_party(player_steamid: str) -> Optional[Party]:
     """
     Player leaves their party.
-    Returns updated party or None if party is disbanded.
+    Returns updated party or None if disbanded.
     """
     party_id = player_to_party.get(player_steamid)
     if not party_id:
@@ -64,26 +79,27 @@ def leave_party(player_steamid: str) -> Optional[Party]:
     # Handle leader leaving
     if party.leader == player_steamid:
         if party.players:
-            # Transfer leadership to next player
             party.leader = party.players[0]
         else:
-            # Disband party if empty
             del parties[party_id]
             return None
 
-    # Return updated party
+    # Reset state to lobby if no longer queued
+    if party.state != "in_match":
+        party.state = "lobby"
+
     return party
 
+# ------------------------------
+# Get party by ID
+# ------------------------------
 def get_party_by_id(party_id: str) -> Optional[Party]:
-    """
-    Retrieve party by its ID.
-    """
     return parties.get(party_id)
 
+# ------------------------------
+# Get party a player belongs to
+# ------------------------------
 def get_party_by_player(steam_id: str) -> Optional[Party]:
-    """
-    Retrieve the party a player belongs to.
-    """
     party_id = player_to_party.get(steam_id)
     if not party_id:
         return None
