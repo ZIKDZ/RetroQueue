@@ -1,21 +1,27 @@
 # models/match.py
-from pydantic import BaseModel
-from typing import List, Dict
+from pydantic import BaseModel, Field
+from typing import List, Optional
+from uuid import uuid4
 
+# ------------------------------
+# Player model (matches GSI plugin)
+# ------------------------------
 class Player(BaseModel):
-    steam_id: str
-    name: str = None
-    health: int
-    armor: int
-    weapons: Dict[str, Dict]  # weapon_name -> weapon stats
-    state: Dict[str, int]     # position, alive, etc.
-    match_stats: Dict[str, int]
+    steam_id: str      # from "steamid"
+    name: str          # player name
+    team: str          # "T", "CT", or "SPECTATOR"
+    kills: int
+    deaths: int
+    assists: int
+    alive: bool
 
-class Match:
-    def __init__(self, match_id, map_name, round_number, players, status, container_id=None):
-        self.match_id = match_id
-        self.map_name = map_name
-        self.round_number = round_number
-        self.players = players
-        self.status = status
-        self.container_id = container_id
+# ------------------------------
+# Match model (matches GSI plugin)
+# ------------------------------
+class Match(BaseModel):
+    match_id: str = Field(default_factory=lambda: str(uuid4()))
+    container_id: Optional[str] = None  # Link to Docker container/session
+    map_name: str
+    round_number: int = 0
+    phase: str = "warmup"  # "warmup", "live", "ended"
+    players: List[Player] = []
