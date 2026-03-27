@@ -1,19 +1,22 @@
 # app/services/session/session_manager.py
 
 import docker
+import os
 import secrets
 import time
 import threading
 from typing import Dict, Optional
 from uuid import uuid4
+from dotenv import load_dotenv
 from app.services.session.port_manager import get_free_port, release_port
+
+load_dotenv()
 
 client = docker.from_env()
 
 CSGO_IMAGE = "cm2network/csgo:sourcemod"
 
-# TEMP: move this later to env file
-STEAM_TOKEN = "YOUR_TOKEN_HERE"
+STEAM_TOKEN = os.environ["SRCDS_TOKEN"]  # GSLT from steamcommunity.com/dev/managegameservers
 
 # Track active sessions (matches)
 active_sessions: Dict[str, dict] = {}
