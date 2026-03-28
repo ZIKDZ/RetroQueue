@@ -24,10 +24,12 @@ active_sessions: Dict[str, dict] = {}
 # ------------------------------
 # Start a CS:GO server session
 # ------------------------------
-def start_session(map_name: str, max_players: int = 10) -> Optional[dict]:
+def start_session(map_name: str, max_players: int = 10, players: list = None) -> Optional[dict]:
     """
     Start a CS:GO server container for a match session.
     Automatically assigns a free port, generates an RCON password, and creates a match ID.
+    players is optional — omit it to start an empty test session.
+    Each entry is a dict with keys: steam_id, team (CT or T).
     """
     port = get_free_port()
     rcon_password = secrets.token_hex(12)  # random 24-char hex password
@@ -69,6 +71,7 @@ def start_session(map_name: str, max_players: int = 10) -> Optional[dict]:
             "port": port,
             "map": map_name,
             "rcon_password": rcon_password,
+            "players": players or [],
             "status": "starting",  # Initially 'starting' until handshake succeeds
         }
 
@@ -76,18 +79,34 @@ def start_session(map_name: str, max_players: int = 10) -> Optional[dict]:
         
         # Create initial match entry in gsi_manager
         from app.services.gsi_manager import active_matches
-        from app.models.match import Match
-        
+        from app.models.match import Match, Player
+
+        # Pre-populate skeleton Player objects with team already set from matchmaking
+        # Stats will be filled in once GSI payloads arrive
+        skeleton_players = [
+            Player(
+                steam_id=p["steam_id"],
+                name="",
+                team=p.get("team", "UNASSIGNED"),
+                kills=0,
+                deaths=0,
+                assists=0,
+                alive=True,
+                connected=False,
+            )
+            for p in (players or [])
+        ]
+
         initial_match = Match(
             match_id=match_id,
             container_id=container.id,
             map_name=map_name,
             round_number=0,
             phase="warmup",
-            players=[]
+            players=skeleton_players,
         )
         active_matches[match_id] = initial_match
-        print(f"[SESSION] Created initial match entry: {match_id}")
+        print(f"[SESSION] Created initial match entry: {match_id} with {len(skeleton_players)} players")
         
         # Start handshake in background thread (non-blocking)
         # This way we return the session immediately and handshake happens in parallel
@@ -145,37 +164,20 @@ def _handshake_match_id(container_id: str, match_id: str, rcon_password: str, po
     """
     Handshake with the server to set the match_id via RCON command.
     Runs in background thread. Updates session status when complete.
-    
-    Args:
-        container_id: Docker container ID
-        match_id: Match ID to set on server
-        rcon_password: RCON password
-        port: Server port
-        max_retries: Maximum number of retry attempts
-        retry_delay: Delay between retries in seconds
-        initial_delay: Initial delay before starting handshake (gives server time to boot)
-    
-    Returns True if handshake succeeded, False otherwise.
     """
-    # Wait for server to start and plugin to load
     print(f"[HANDSHAKE] Waiting {initial_delay}s for server startup...")
     time.sleep(initial_delay)
-    
-    # Import here to avoid circular import
+
     from app.services.session.rcon_manager import RCONManager
-    
     rcon = RCONManager()
     print(f"[HANDSHAKE] Starting match_id handshake for {container_id}")
-    
+
     for attempt in range(max_retries):
         try:
-            # Send the sm_set_match_id command via RCON
             result = rcon.send_command(container_id, f"sm_set_match_id {match_id}")
-            
-            # Check if the expected acknowledgment is in the response
+
             if "[GSI_MATCHID_ACK]" in result and match_id in result:
-                print(f"[HANDSHAKE] ✓ Match ID set successfully on container {container_id}")
-                # Update session status to running
+                print(f"[HANDSHAKE] ✓ Match ID set on container {container_id}")
                 if container_id in active_sessions:
                     active_sessions[container_id]["status"] = "running"
                 return True
@@ -183,13 +185,11 @@ def _handshake_match_id(container_id: str, match_id: str, rcon_password: str, po
                 print(f"[HANDSHAKE] Attempt {attempt + 1}/{max_retries}: Unexpected response")
         except Exception as e:
             print(f"[HANDSHAKE] Attempt {attempt + 1}/{max_retries}: {type(e).__name__}: {str(e)[:80]}")
-        
-        # Wait before retrying
+
         if attempt < max_retries - 1:
             time.sleep(retry_delay)
-    
+
     print(f"[HANDSHAKE] ✗ FAILED: Could not set match_id on {container_id} after {max_retries} attempts")
-    # Update session status to failed
     if container_id in active_sessions:
         active_sessions[container_id]["status"] = "handshake_failed"
     return False

@@ -1,9 +1,7 @@
 # app/routes/matchmaking.py
 from fastapi import APIRouter
 from typing import List
-from app.services.matchmaking import join_queue, get_queue, get_active_matches
-from app.services.session.session_manager import start_session
-from app.services.session.port_manager import get_free_port
+from app.services.matchmaking import join_queue, get_queue
 
 router = APIRouter(prefix="/matchmaking", tags=["matchmaking"])
 
@@ -19,33 +17,14 @@ ALLOWED_MAPS = ["de_dust2", "de_mirage", "de_inferno"]
 def join_matchmaking(party_id: str, maps: List[str]):
     """
     Add a party to one or more map queues.
-    Returns queued party and any matches created.
+    When 10 players are ready, a CS:GO session is started automatically.
     Only allows maps in ALLOWED_MAPS.
     """
-    # Filter maps to only include allowed maps
     valid_maps = [m for m in maps if m in ALLOWED_MAPS]
     if not valid_maps:
         return {"error": "No valid maps provided. Allowed maps: " + ", ".join(ALLOWED_MAPS)}
 
-    # Join the queue (returns created matches if any)
-    result = join_queue(party_id, valid_maps)
-
-    # Start sessions for any new matches
-    for match in result.get("created_matches", []):
-        try:
-            port = get_free_port()
-            session = start_session(match["map_name"], max_players=match["max_players"])
-            if session:
-                match["container_id"] = session["container_id"]
-                match["port"] = session["port"]
-                match["status"] = "in_game"
-            else:
-                match["status"] = "failed"
-        except Exception as e:
-            match["status"] = "failed"
-            match["error"] = str(e)
-
-    return result
+    return join_queue(party_id, valid_maps)
 
 # ------------------------------
 # Inspect queue for a map
@@ -63,8 +42,9 @@ def queue_status(map_name: str):
 # Get all active matches
 # ------------------------------
 @router.get("/matches")
-def active_matches():
+def get_matches():
     """
-    Returns all current matches.
+    Returns all active matches with their current state and player list.
     """
-    return {"matches": get_active_matches()}
+    from app.services.gsi_manager import active_matches
+    return {"matches": [m.dict() for m in active_matches.values()]}

@@ -1,9 +1,8 @@
 # app/services/matchmaking.py
 from typing import Dict, List
-from uuid import uuid4
 from app.services.party import get_party_by_id
 from app.models.party import Party
-from app.models.match import Match
+from app.services.session.session_manager import start_session
 
 # ------------------------------
 # Allowed competitive maps
@@ -16,17 +15,13 @@ ALLOWED_MAPS = ["de_dust2", "de_mirage", "de_inferno"]
 queue: Dict[str, List[Party]] = {}
 
 # ------------------------------
-# In-memory matches: match_id -> Match object
-# ------------------------------
-matches: Dict[str, Match] = {}
-
-# ------------------------------
 # Join queue with a party
 # ------------------------------
 def join_queue(party_id: str, maps: List[str]) -> dict:
     """
     Add a party to the selected maps' queues.
-    Returns a dict with status and created matches (if any).
+    When 10 players are ready, starts a session directly.
+    Returns a dict with status and any started sessions.
     Only allows parties in 'lobby' state to join.
     """
     party = get_party_by_id(party_id)
@@ -44,7 +39,7 @@ def join_queue(party_id: str, maps: List[str]) -> dict:
     if not valid_maps:
         return {"error": "No valid maps provided. Allowed maps: " + ", ".join(ALLOWED_MAPS)}
 
-    created_matches = []
+    started_sessions = []
 
     for map_name in valid_maps:
         # Initialize map queue if it doesn't exist
@@ -59,7 +54,7 @@ def join_queue(party_id: str, maps: List[str]) -> dict:
         queue[map_name].append(party)
         party.state = "queue"
 
-        # Check if enough players to create a match
+        # Check if enough players to start a session
         total_players = sum(len(p.players) for p in queue[map_name])
         if total_players >= 10:
             match_parties = []
@@ -73,26 +68,32 @@ def join_queue(party_id: str, maps: List[str]) -> dict:
                 else:
                     break
 
-            # Remove matched parties from queue and update state
+            # Assign teams party by party — first party gets CT, second gets T,
+            # keeping every party whole on the same team
+            players = []
+            for i, p in enumerate(match_parties):
+                team = "CT" if i % 2 == 0 else "T"
+                for steam_id in p.players:
+                    players.append({"steam_id": steam_id, "team": team})
+
+            # Remove matched parties from queue and update their state
             for p in match_parties:
                 queue[map_name].remove(p)
                 p.state = "in_match"
 
-            # Create the match
-            match_id = str(uuid4())
-            match = Match(
-                id=match_id,
-                map_name=map_name,
-                parties=[p.party_id for p in match_parties],
-                max_players=10
-            )
-            matches[match_id] = match
-            created_matches.append(match)
+            # Start the session with the map and player+team list
+            session = start_session(map_name=map_name, max_players=10, players=players)
+            if session:
+                session["status"] = "starting"
+            else:
+                session = {"map_name": map_name, "players": players, "status": "failed"}
+
+            started_sessions.append(session)
 
     return {
         "message": "Party queued successfully",
         "queued_party": party.party_id,
-        "created_matches": [m.dict() for m in created_matches]
+        "started_sessions": started_sessions,
     }
 
 # ------------------------------
@@ -103,12 +104,3 @@ def get_queue(map_name: str) -> List[dict]:
     Returns a list of parties in the queue for the given map.
     """
     return [p.dict() for p in queue.get(map_name, [])]
-
-# ------------------------------
-# Get all active matches
-# ------------------------------
-def get_active_matches() -> List[dict]:
-    """
-    Returns all current matches.
-    """
-    return [m.dict() for m in matches.values()]

@@ -37,9 +37,22 @@ def handle_gsi_payload(payload: Dict[str, Any], match_id: str) -> str:
 
     if match_id in active_matches:
         match = active_matches[match_id]
-        match.players = players
         match.round_number = round_number
         match.phase = phase
+
+        # Merge snapshot into existing player roster by steam_id.
+        # Players not yet in the snapshot (not connected yet) keep their
+        # skeleton entry untouched — only connected players get updated.
+        snapshot_by_id = {p.steam_id: p for p in players}
+        merged = []
+        for existing in match.players:
+            if existing.steam_id in snapshot_by_id:
+                # Replace skeleton with live data from the snapshot
+                merged.append(snapshot_by_id[existing.steam_id])
+            else:
+                # Player not in snapshot yet — keep skeleton as-is
+                merged.append(existing)
+        match.players = merged
     else:
         container_id = _get_container_by_match_id(match_id)
         if not container_id:
